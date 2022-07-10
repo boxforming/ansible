@@ -201,19 +201,19 @@
             use_backend openssh if ssh_payload
             use_backend openssh if !{ req.ssl_hello_type 1 } { req.len 0 }
 
+          # if you're want to test backend, but dns is not updated yet
+          # curl -v --resolve {{ inventory_hostname }}:443:{{ facts.ansible_facts.ansible_default_ipv4.address }} https://{{ inventory_hostname }}/
           backend nginx
             mode tcp
-          #   balance leastconn
+            # balance leastconn
             option tcp-check 
-          # TODO: add ca= and remove verify none
-            server nginx 127.0.0.2:443 send-proxy-v2 check ca-file {{ domain_hostname }}.ca ssl verify none
+            server nginx 127.0.0.2:443 send-proxy-v2 ssl check verify required ca-file ca-certificates.crt
 
-          # curl -v --resolve vpn.apla.me:443:95.85.89.60 https://vpn.apla.me/
           backend ocserv
             mode tcp
             option ssl-hello-chk
             timeout server 24h
-            server ocserv 127.0.0.3:443 send-proxy-v2 check ssl verify none
+            server ocserv 127.0.0.3:443 send-proxy-v2 ssl verify required ca-file ca-certificates.crt
 
           backend openssh
             mode tcp
