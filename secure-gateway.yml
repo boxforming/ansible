@@ -179,6 +179,12 @@
         create: yes
         mode: 0644
         block: |
+
+          frontend http
+            bind {{ facts.ansible_facts.ansible_default_ipv4.address }}:80
+            mode http
+            http-request redirect scheme https unless { ssl_fc }
+
           frontend ssl
             mode tcp
             bind {{ facts.ansible_facts.ansible_default_ipv4.address }}:443 ssl crt {{ domain_hostname }}
@@ -238,6 +244,11 @@
           title=HAProxy SSL proxy in TCP mode
           description=HAProxy SSL proxy in TCP mode
           ports=443/tcp
+
+          [HAProxy HTTP]
+          title=HAProxy redirect HTTP to SSL proxy
+          description=HAProxy redirect HTTP to SSL proxy
+          ports=80/tcp
 
     # - name: Patch haproxy gateway service file 3/4
     #   ini_file:
@@ -530,6 +541,7 @@
         - "OpenSSH"
         - "Nginx DoT"
         - "HAProxy SSL"
+        - "HAProxy HTTP"
         - "IKEv2 VPN"
         - "WireGuard"
 
