@@ -1,26 +1,34 @@
 ---
 - name: Create gateway server
-  hosts: omnigateways
+  hosts: gatewaybox
   become: yes
   gather_facts: false
   vars:
-    - ansible_ssh_extra_args: "-o ForwardAgent=yes"
-    - tunnel_user: tunnel
-    - ansible_become_flags: "-H -S"
+    # workaround ansible bugz
     - ansible_python_interpreter: auto_silent
+    - ansible_ssh_extra_args: "-o ForwardAgent=yes"
+    - ansible_become_flags: "-H -S"
+
     - reverse_hostname: "{{ inventory_hostname.split('.')[::-1] | join('.') }}"
     - domain_hostname: "{{ inventory_hostname.split('.')[-2:] | join('.') }}" # co.uk and other should be sent by cli
     - vpn_hostname: "vpn.{{ domain_hostname }}"
     - ssh_key_filename: "~/.ssh/{{ reverse_hostname }}"
     - ssh_pub_filename: "~/.ssh/{{ reverse_hostname }}.pub"
-    - haproxygw_service_file: /etc/systemd/system/haproxygw.service
-    - haproxygw_d_dir: /etc/haproxy/haproxygw.d
+    - haproxygw_service_file: "/etc/systemd/system/haproxygw.service"
+    - haproxygw_d_dir: "/etc/haproxy/haproxygw.d"
     - nginx_listen_host: "127.0.0.2"
     - ocserv_listen_host: "127.0.0.3"
     - vpn_client_route: "0.0.0.0/0" #,::/0
-    - vpn_oc_client_subnet: 10.10.254.0/26
-    - vpn_wg_client_subnet: 10.10.254.64/26
-    - vpn_ikev2_client_subnet: 10.10.254.128/26 #,2a00:1450:400c:c05::/112
+
+    # @var tunnel_user: "tunnel" # tunnel user's username
+    - tunnel_user: "tunnel"
+
+    # @var vpn_ipv4_base: "10.10." # IPv4 /16 base for vpn subnet. Please use different /16 subnets for different gateways
+    # - vpn_ipv4_base: "10.10."
+    - vpn_oc_client_subnet: "{{ vpn_ipv4_base }}251.0/24"
+    - vpn_wg_client_subnet: "{{ vpn_ipv4_base }}252.0/24"
+    - vpn_wg_client_sample: "{{ vpn_ipv4_base }}252.0/32"
+    - vpn_ikev2_client_subnet: "{{ vpn_ipv4_base }}253.0/24" #,2a00:1450:400c:c05::/112
     # TODO: use stubby
     - client_dns: "8.8.8.8" #,2001:4860:4860::8888
 
