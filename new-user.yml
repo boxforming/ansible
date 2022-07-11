@@ -17,7 +17,7 @@
 
     - reverse_hostname: "{{ inventory_hostname.split('.')[::-1] | join('.') }}"
     - ssh_key_filename: "~/.ssh/{{ reverse_hostname }}"
-    - ssh_pub_filename: "~/.ssh/{{ reverse_hostname }}.pub"
+    - ssh_pub_filename: "{{ ssh_key_filename }}.pub"
     - ansible_host_key_checking: false
     - remote_port: "{{ hostvars[inventory_hostname].ansible_ssh_port | default(hostvars[inventory_hostname].ansible_port) | default('22') }}"
     - remote_host: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
