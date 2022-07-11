@@ -229,6 +229,17 @@
     # https://serverfault.com/questions/738045/haproxy-to-terminate-ssl-also-send-ssl-to-backend-server
     # https://habr.com/ru/post/540212/
 
+
+    - name: Ensure no conflicts on ports
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: yes
+        state: stopped
+      when: haproxy_service_copy.changed
+      with_items:
+        - nginx
+        - ocserv
+
     - name: HAProxy enable and launch service
       ansible.builtin.service:
         name: haproxygw
@@ -268,6 +279,8 @@
     #       - "/bin/kill -USR2 $MAINPID"
     #     no_extra_spaces: yes
 
+  # Nginx listen on port 80 by default thus prevent HAproxy on port 80 listen
+  # we need to configure nginx before HAproxy or stop Nginx before configuring HAproxy
   - name: Nginx server
     block:
 
@@ -343,7 +356,9 @@
         enabled: yes
         state: restarted
 
-  
+  # OpenConnect will listen on port 443 and HAproxy will fail to start
+  # so I'm configuring and restarting OpenConnect before HAproxy
+  # or stop OpenConnect server before HAproxy
   - name: OpenConnect VPN server
     block:
 
@@ -375,7 +390,13 @@
           default-domain = {{ domain_hostname }}
           dns = {{ client_dns }}
       # when: haproxy_service_copy.changed
-  
+
+    - name: OpenConnect enable and launch service
+      service:
+        name: ocserv
+        enabled: yes
+        state: restarted
+
   - name: IKEv2 VPN server
     block:
 
