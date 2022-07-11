@@ -455,45 +455,114 @@
   - name: WireGuard VPN server
     block:
 
+    # https://superuser.com/questions/1500691/usr-bin-wg-quick-line-31-resolvconf-command-not-found-wireguard-debian
+    # ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
+    # systemctl enable systemd-resolved.service
+
+    - name: Resolver service for wireguard
+      service:
+        name: systemd-resolved
+        enabled: yes
+    
+    - name: Create symbolic link resolvectl => resolveconf
+      file:
+        src: "/usr/bin/resolvectl"
+        dest: "/usr/local/bin/resolvconf"
+        state: link
+
     # https://hackernoon.com/how-to-automate-your-vpn-setup-with-ansible-nl3133ri
     # access to the network: https://www.comptia.org/blog/configuring-wireguard-vpn
-    # https://www.procustodibus.com/blog/2021/05/wireguard-ufw/
-    - name: generate private key
+    # https://www.procustodibus.com/blog/2021/05/wireguard-ufw/ - different client setup
+    - name: Generate private key
       shell:
         cmd: umask 077 && wg genkey | tee privatekey | wg pubkey > publickey
         chdir: /etc/wireguard
         creates: /etc/wireguard/publickey
 
-    - name: read private key
-      slurp:
-        src: "/etc/wireguard/privatekey"
-      register: vpn_wg_private_key
+    - name: Cat WireGuard public key
+      shell: cat /etc/wireguard/publickey
+      register: wg_publickey
 
+    - name: Creates peer configs directory
+      file:
+        path: "/etc/wireguard/wg0-peers/"
+        state: directory
+
+    # https://hackernoon.com/how-to-automate-your-vpn-setup-with-ansible-nl3133ri
+    # maybe it's good to add routing?
+    # PostUp = ip rule add table 200 from 203.0.113.5
+    # PostUp = ip route add table 200 default via 203.0.113.1
+    # PreDown = ip rule delete table 200 from 203.0.113.5
+    # PreDown = ip route delete table 200 default via 203.0.113.1
+    # https://www.digitalocean.com/community/tutorials/how-to-set-up-wireguard-on-ubuntu-20-04
+    # or like this:
+    # wg show $WG_IFACE allowed-ips | awk '{ for (i=2; i<=NF; i++) print $i }' | while read ip_a; do
+    #   [[ $ip_a != 0.0.0.0/0 ]] && ip route add $ip_a dev $WG_IFACE 2> /dev/null;
+    # done;
+    # https://habr.com/ru/company/indriver/blog/586006/
     - name: wireguard config
       ansible.builtin.blockinfile:
         path: /etc/wireguard/wg0.conf
         create: yes
         block: |
           [Interface]
-          # The address your computer will use on the VPN
+          ListenPort = 51820
+          # Subnet mask your computer will use on the VPN
           Address = {{ vpn_wg_client_subnet }}
           # Load your privatekey from file
           PostUp = wg set %i private-key /etc/wireguard/privatekey
-          # Also ping the vpn server to ensure the tunnel is initialized
-          PostUp = ping -c1 10.0.0.1
-          # wg set %i peer i8nniZCkTISUfaLMQ+FV0Sewvq0f68UrkLkeV0a4BnA= allowed-ips 192.168.1.2/32,10.0.1.0/24 endpoint 12.35.181.48:1194
-
+          # wg set %i peer <publickey> allowed-ips {{ vpn_wg_client_subnet }} endpoint {{ facts.ansible_facts.ansible_default_ipv4.address }}:51820
+          PostUp = for peerconf in /etc/wireguard/%i-peers/*.conf ; do wg addconf %i $peerconf ; done
 
           DNS = {{ client_dns }}
+      
+    # https://hackernoon.com/how-to-automate-your-vpn-setup-with-ansible-nl3133ri
+    # https://www.reddit.com/r/WireGuard/comments/bxuifs/simplifying_android_device_addition/
+    - name: Wireguard peer config sample
+      blockinfile:
+        path: /etc/wireguard/wg0-peers/peer.sample
+        create: yes
+        block: |
+
+          # PrivateKey not needed - it is loaded after interface is up
+          # take a look in wg0.conf
+
+          [Peer]
+          PublicKey = <publickey>
+
+          AllowedIPs = <cidr>
+          Endpoint = {{ facts.ansible_facts.ansible_default_ipv4.address }}:51820
 
           # send keep alive packet every 30s
           PersistentKeepalive = 30
 
-          ListenPort = 51820
-          # PrivateKey = {{ vpn_wg_private_key.content }}
+    - name: Wireguard peer config sample
+      blockinfile:
+        path: /etc/wireguard/wg0-peers/client.sample
+        create: yes
+        block: |
+          [Interface]
+          PrivateKey = <privatekey>
+          Address = <cidr>
+          DNS = {{ client_dns }}
+
+          [Peer]
+          PublicKey = {{ wg_publickey.stdout }}
+
+          AllowedIPs = 0.0.0.0/0
+          Endpoint = {{ facts.ansible_facts.ansible_default_ipv4.address }}:51820
+
+          # send keep alive packet every 30s
+          PersistentKeepalive = 30
+
+    # sudo wg set wg0 peer i8nniZCkTISUfaLMQ+FV0Sewvq0f68UrkLkeV0a4BnA= allowed-ips 10.10.254.65/32 endpoint 95.85.89.60:51820
+
+
+    # https://habr.com/ru/company/indriver/blog/586006/
+    # https://habr.com/ru/company/globalsign/blog/491034/ comments
 
     - name: WireGuard ufw profile
-      ansible.builtin.blockinfile:
+      blockinfile:
         dest: "/etc/ufw/applications.d/wireguard"
         create: yes
         block: |
@@ -501,6 +570,11 @@
           title=WireGuard VPN
           description=WireGuard VPN
           ports=51820/udp
+
+    - name: Wireguard service
+      service:
+        name: wg-quick@wg0
+        enabled: yes
 
   - name: VPN networking and firewall
     block:
@@ -517,6 +591,9 @@
         regexp: "^DEFAULT_FORWARD_POLICY"
         line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
 
+    # looks like MASQUERADE adding every time when playbook run
+    # why? https://gist.github.com/kimus/9315140?permalink_comment_id=1464461#gistcomment-1464461
+    # sudo iptables -t nat -L -v
     - name: Add masquerading
       blockinfile:
         path: /etc/ufw/before.rules
@@ -526,6 +603,7 @@
 
           *nat
           :POSTROUTING ACCEPT [0:0]
+          -F
           -A POSTROUTING -o {{ facts.ansible_facts.ansible_default_ipv4.interface }} -j MASQUERADE
           
           # don't delete the second 'COMMIT' line too
