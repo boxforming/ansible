@@ -32,6 +32,7 @@
     # TODO: use stubby
     - client_dns: "8.8.8.8" #,2001:4860:4860::8888
 
+    - acme_sh_dir: "/Users/apla/.acme.sh"
 
   # https://www.haproxy.com/blog/dynamic-configuration-haproxy-runtime-api/
 
@@ -112,12 +113,12 @@
     - name: "Copy {{ domain_hostname }} cert"
       copy: src={{ item.src }} dest={{ item.dest }} mode={{ item.mode }}
       with_items:
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/ca.cer", dest: "/etc/ssl/certs/{{ domain_hostname }}.ca", mode: "660"}
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/ca.cer", dest: "/etc/ipsec.d/cacerts/ca.crt", mode: "660"}
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/fullchain.cer", dest: "/etc/ssl/private/{{ domain_hostname }}", mode: "660"}
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/fullchain.cer", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}", mode: "660"}
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ssl/private/{{ domain_hostname }}.key", mode: "600"}
-        - { src: "/Users/apla/.acme.sh/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ipsec.d/private/{{ domain_hostname }}", mode: "600"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer", dest: "/etc/ssl/certs/{{ domain_hostname }}.ca", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer", dest: "/etc/ipsec.d/cacerts/ca.crt", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/fullchain.cer", dest: "/etc/ssl/private/{{ domain_hostname }}", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.cer", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ssl/private/{{ domain_hostname }}.key", mode: "600"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ipsec.d/private/{{ domain_hostname }}", mode: "600"}
 
   - name: HAProxy
     block:
