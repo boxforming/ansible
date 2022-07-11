@@ -318,7 +318,13 @@
               proxy_pass dns; # comment out to use dot upstream
             }
           }
-    
+
+    # - name: Create symbolic link
+    #   file:
+    #     src: "/etc/nginx/modules-available/dns-over-tcp"
+    #     dest: "/etc/nginx/modules-enabled/dns-over-tcp"
+    #     state: link
+
     - name: Nginx DNS-over-TCP ufw profile
       ansible.builtin.blockinfile:
         dest: "/etc/ufw/applications.d/nginx-DoT"
@@ -328,27 +334,40 @@
           title=Nginx DNS-over-TCP proxy
           description=Nginx DNS-over-TCP proxy
           ports=853/tcp
-    # - name: Create symbolic link
-    #   file:
-    #     src: "/etc/nginx/modules-available/dns-over-tcp"
-    #     dest: "/etc/nginx/modules-enabled/dns-over-tcp"
-    #     state: link
     
     - name: Nginx ssl listener
       blockinfile:
-        dest: "/etc/nginx/sites-available/default"
-        insertafter: 'listen\s\[\:\:\]\:80\sdefault_server'
+        create: yes
+        mode: 0644
+        dest: "/etc/nginx/sites-available/default_boxforming"
         block: |
-          listen {{ nginx_listen_host }}:443 ssl proxy_protocol;
+          server {
+            listen {{ nginx_listen_host }}:443 ssl proxy_protocol;
 
-          set_real_ip_from 127.0.0.1;
-          set_real_ip_from {{ facts.ansible_facts.ansible_default_ipv4.address }};
-          real_ip_header proxy_protocol;
+            set_real_ip_from 127.0.0.1;
+            set_real_ip_from {{ facts.ansible_facts.ansible_default_ipv4.address }};
+            real_ip_header proxy_protocol;
 
-          server_name es-edgecenter.apla.me;
+            server_name {{ inventory_hostname }} {% if host_alias is defined %}{{ host_alias }}{% endif %};
 
-          ssl_certificate /etc/ssl/private/{{ domain_hostname }};
-          ssl_certificate_key /etc/ssl/private/{{ domain_hostname }}.key;
+            ssl_certificate /etc/ssl/private/{{ domain_hostname }};
+            ssl_certificate_key /etc/ssl/private/{{ domain_hostname }}.key;
+
+            root /var/www/html;
+
+            index index.html index.htm index.nginx-debian.html;
+
+            location / {
+              try_files $uri $uri/ =404;
+            }
+
+          }
+
+    - name: Nginx link custom config
+      file:
+        src: "/etc/nginx/sites-available/default_boxforming"
+        dest: "/etc/nginx/sites-enabled/default"
+        state: link
 
     - name: Nginx enable and launch service
       ansible.builtin.service:
