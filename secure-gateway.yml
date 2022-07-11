@@ -446,13 +446,11 @@
               dpddelay=60s
               dpdtimeout=1800s
 
-              fragmentation=yes
-
               keyexchange=ikev2
               auto=add
               rekey=no
               reauth=no
-              fragmentation=yes
+              # fragmentation=yes # default
               #compress=yes
 
               # server/gateway side
