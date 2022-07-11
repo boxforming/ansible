@@ -197,6 +197,10 @@
             tcp-request content accept if { req.ssl_hello_type 1 }
             # acl www req.ssl_sni -i {{ inventory_hostname }}
             # acl vpn req.ssl_sni -i vpn.{{ domain_hostname }}
+
+            {% if host_alias is defined %}
+            acl www ssl_fc_sni -i {{ host_alias }}
+            {% endif %}
             acl www ssl_fc_sni -i {{ inventory_hostname }}
             acl vpn ssl_fc_sni -i {{ vpn_hostname }}
             acl ssh_payload payload(0,7) -m bin 5353482d322e30
