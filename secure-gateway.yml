@@ -203,6 +203,9 @@
             acl www ssl_fc_sni -i {{ host_alias }}
             {% endif %}
             acl www ssl_fc_sni -i {{ inventory_hostname }}
+            # maybe add configurable prefixes?
+            acl vpn ssl_fc_sni -i -m beg tun
+            acl vpn ssl_fc_sni -i -m beg vpn
             acl vpn ssl_fc_sni -i {{ vpn_hostname }}
             acl ssh_payload payload(0,7) -m bin 5353482d322e30
             # use_backend nginx if www { req.ssl_hello_type 1 }
@@ -224,7 +227,7 @@
             mode tcp
             option ssl-hello-chk
             timeout server 24h
-            server ocserv 127.0.0.3:443 send-proxy-v2 ssl verify required ca-file ca-certificates.crt
+            server ocserv 127.0.0.3:443 send-proxy-v2 ssl verify none
 
           backend openssh
             mode tcp
@@ -389,31 +392,32 @@
     - name: Patch ocserv config file 1/3
       ansible.builtin.lineinfile:
         path: /etc/ocserv/ocserv.conf
-        search_string: '^auth = "pam'
-        line: '#auth = "pam[gid-min=1000]"'
+        regexp: '^#listen-host = '
+        line: 'listen-host = [IP|HOSTNAME]'
 
-    - name: Patch ocserv config file 2/3
+    # restore original file sudo apt install --reinstall -o Dpkg::Options::="--force-confask,confnew,confmiss" ocserv
+    - name: "Set ocserv config options"
+      community.general.ini_file:
+        path: /etc/ocserv/ocserv.conf
+        section: null
+        option: "{{ item.option }}"
+        value: "{{ item.value }}"
+      with_items:
+        - { option: "auth", value: "\"plain[passwd=/etc/ocserv/passwd]\"" }
+        - { option: "listen-host", value: "{{ ocserv_listen_host }}" }
+        - { option: "listen-proxy-proto", value: "true" }
+        - { option: "server-cert", value: "/etc/ssl/private/{{ domain_hostname }}" }
+        - { option: "server-key", value: "/etc/ssl/private/{{ domain_hostname }}.key" }
+        - { option: "ipv4-network", value: "{{ vpn_oc_client_subnet }}" }
+        - { option: "default-domain", value: "{{ domain_hostname }}" }
+        - { option: "dns", value: "{{ client_dns }}" }
+        - { option: "ca-cert", value: "/etc/ssl/certs/{{ domain_hostname }}.ca" }
+
+    - name: Patch ocserv config file 3/3
       ansible.builtin.lineinfile:
         path: /etc/ocserv/ocserv.conf
-        search_string: '^udp-port = 443'
+        regexp: '^udp-port'
         line: '#udp-port = 443'
-
-    # https://aeb-blog.ru/linux/ustanovka-openconnect-servera-v-sentos-7/
-    - name: Patch ocserv config file 3/3
-      ansible.builtin.blockinfile:
-        path: /etc/ocserv/ocserv.conf
-        # insertafter: '^server-key\s=\s\/etc\/ssl\/private\/ssl-cert-snakeoil.key'
-        block: |
-          auth = "plain[passwd=/etc/ocserv/passwd]"
-          listen-host = {{ ocserv_listen_host }}
-          listen-proxy-proto = true
-          server-cert = /etc/ssl/private/{{ domain_hostname }}
-          server-key = /etc/ssl/private/{{ domain_hostname }}.key
-          ca-cert = /etc/ssl/certs/{{ domain_hostname }}.ca
-          ipv4-network = {{ vpn_oc_client_subnet }}
-          default-domain = {{ domain_hostname }}
-          dns = {{ client_dns }}
-      # when: haproxy_service_copy.changed
 
     - name: OpenConnect enable and launch service
       service:
