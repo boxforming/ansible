@@ -326,6 +326,7 @@
               proxy_pass dns; # comment out to use dot upstream
             }
           }
+      register: nginx_dot
 
     # - name: Create symbolic link
     #   file:
@@ -370,6 +371,7 @@
             }
 
           }
+      register: nginx_https
 
     - name: Nginx link custom config
       file:
@@ -381,7 +383,9 @@
       ansible.builtin.service:
         name: nginx
         enabled: yes
-        state: restarted
+        state: "{{ nginx_restart|ternary('restarted', 'started') }}"
+      vars:
+        nginx_restart: "{{ [nginx_dot, nginx_https]|flatten|selectattr('changed')|length > 0 }}"
 
   # OpenConnect will listen on port 443 and HAproxy will fail to start
   # so I'm configuring and restarting OpenConnect before HAproxy
@@ -394,6 +398,7 @@
         path: /etc/ocserv/ocserv.conf
         regexp: '^#listen-host = '
         line: 'listen-host = [IP|HOSTNAME]'
+      register: ocserv_conf_listen
 
     # restore original file sudo apt install --reinstall -o Dpkg::Options::="--force-confask,confnew,confmiss" ocserv
     - name: "Set ocserv config options"
@@ -412,18 +417,23 @@
         - { option: "default-domain", value: "{{ domain_hostname }}" }
         - { option: "dns", value: "{{ client_dns }}" }
         - { option: "ca-cert", value: "/etc/ssl/certs/{{ domain_hostname }}.ca" }
+      register: ocserv_conf
 
     - name: Patch ocserv config file 3/3
       ansible.builtin.lineinfile:
         path: /etc/ocserv/ocserv.conf
         regexp: '^udp-port'
         line: '#udp-port = 443'
+      register: ocserv_conf_udp
 
     - name: OpenConnect enable and launch service
       service:
         name: ocserv
         enabled: yes
-        state: restarted
+        state: "{{ ocserv_restart|ternary('restarted', 'started') }}"
+      vars:
+        ocserv_restart: "{{ [ocserv_conf_listen, ocserv_conf, ocserv_conf_udp]|flatten|selectattr('changed')|length > 0 }}"
+
 
   - name: IKEv2 VPN server
     block:
@@ -486,6 +496,16 @@
 
           conn ikev2-eap-ios
               eap_identity=%any
+      register: ipsec_conf
+
+    - name: IPSec enable and launch service
+      service:
+        name: ipsec
+        enabled: yes
+        state: "{{ ipsec_restart|ternary('restarted', 'started') }}"
+      vars:
+        ipsec_restart: "{{ [ipsec_conf]|flatten|selectattr('changed')|length > 0 }}"
+
 
     - name: Strongswan IKEv2 ufw profile
       ansible.builtin.blockinfile:
