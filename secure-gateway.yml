@@ -32,7 +32,8 @@
     # TODO: use stubby
     - client_dns: "8.8.8.8" #,2001:4860:4860::8888
 
-    - acme_sh_dir: "/Users/apla/.acme.sh"
+    # @var acme_sh_dir: "" # acme.sh certificates directory
+    # - acme_sh_dir:
 
   # https://www.haproxy.com/blog/dynamic-configuration-haproxy-runtime-api/
 
@@ -107,18 +108,28 @@
           - wireguard
         state: present
 
-  - name: SSL certificates
+  - name: Certificates
     block:
 
-    - name: "Copy {{ domain_hostname }} cert"
+    - name: "Copy {{ domain_hostname }} certs"
       copy: src={{ item.src }} dest={{ item.dest }} mode={{ item.mode }}
       with_items:
-        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer", dest: "/etc/ssl/certs/{{ domain_hostname }}.ca", mode: "660"}
-        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer", dest: "/etc/ipsec.d/cacerts/ca.crt", mode: "660"}
-        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/fullchain.cer", dest: "/etc/ssl/private/{{ domain_hostname }}", mode: "660"}
-        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.cer", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer",                    dest: "/etc/ssl/certs/{{ domain_hostname }}.ca", mode: "660"}
+        # - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/ca.cer",                    dest: "/etc/ipsec.d/cacerts/ca.crt", mode: "660"}
+
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/fullchain.cer",             dest: "/etc/ssl/certs/{{ domain_hostname }}.bundle", mode: "660"}
+        - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.cer", dest: "/etc/ssl/certs/{{ domain_hostname }}", mode: "660"}
+        # - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.cer", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}", mode: "660"}
+
         - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ssl/private/{{ domain_hostname }}.key", mode: "600"}
+        # we cannot symlink the key because apparmor will not be happy
         - { src: "{{ acme_sh_dir }}/{{ domain_hostname }}/{{ domain_hostname }}.key", dest: "/etc/ipsec.d/private/{{ domain_hostname }}", mode: "600"}
+
+    - name: "Link {{ domain_hostname }} certs for ipsec"
+      file: src="{{ item.src }}" dest={{ item.dest }} state="link"
+      with_items:
+        - { src: "/etc/ssl/certs/{{ domain_hostname }}.ca", dest: "/etc/ipsec.d/cacerts/{{ domain_hostname }}.ca" }
+        - { src: "/etc/ssl/certs/{{ domain_hostname }}", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}" }
 
   - name: HAProxy
     block:
@@ -358,7 +369,7 @@
 
             server_name {{ inventory_hostname }} {% if host_alias is defined %}{{ host_alias }}{% endif %};
 
-            ssl_certificate /etc/ssl/private/{{ domain_hostname }};
+            ssl_certificate /etc/ssl/certs/{{ domain_hostname }}.bundle;
             ssl_certificate_key /etc/ssl/private/{{ domain_hostname }}.key;
 
             root /var/www/html;
@@ -406,7 +417,7 @@
         - { option: "auth", value: "\"plain[passwd=/etc/ocserv/passwd]\"" }
         - { option: "listen-host", value: "{{ ocserv_listen_host }}" }
         - { option: "listen-proxy-proto", value: "true" }
-        - { option: "server-cert", value: "/etc/ssl/private/{{ domain_hostname }}" }
+        - { option: "server-cert", value: "/etc/ssl/certs/{{ domain_hostname }}.bundle" }
         - { option: "server-key", value: "/etc/ssl/private/{{ domain_hostname }}.key" }
         - { option: "ipv4-network", value: "{{ vpn_oc_client_subnet }}" }
         - { option: "default-domain", value: "{{ domain_hostname }}" }
