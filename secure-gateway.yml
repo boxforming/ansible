@@ -131,6 +131,63 @@
         - { src: "/etc/ssl/certs/{{ domain_hostname }}.ca", dest: "/etc/ipsec.d/cacerts/{{ domain_hostname }}.ca" }
         - { src: "/etc/ssl/certs/{{ domain_hostname }}", dest: "/etc/ipsec.d/certs/{{ domain_hostname }}" }
 
+    - name: Systemd certificate watcher
+      blockinfile:
+        dest: "/etc/systemd/system/cert-watcher.service"
+        create: yes
+        mode: 0640
+        block: |
+          [Unit]
+          Description=Certificate watcher
+          After=network.target
+          StartLimitIntervalSec=10
+          StartLimitBurst=5
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/systemctl reload ipsec.service
+          ExecStart=/usr/bin/systemctl reload nginx.service
+          ExecStart=/usr/bin/systemctl reload ocserv.service
+          ExecStart=/usr/bin/systemctl reload haproxygw.service
+
+          [Install]
+          WantedBy=multi-user.target
+      register: cert_watcher
+
+    - name: Systemd certificate watcher path
+      blockinfile:
+        dest: "/etc/systemd/system/cert-watcher.path"
+        create: yes
+        mode: 0640
+        block: |
+          [Path]
+          Unit=cert-watcher.service
+          PathChanged=/etc/ssl/certs
+          PathChanged=/etc/ssl/private
+
+          [Install]
+          WantedBy=multi-user.target
+      register: cert_watcher_path
+
+    - name: Certwatcher service restart
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: yes
+        state: restarted
+      when: cert_watcher.changed or cert_watcher_path.changed
+      with_items:
+        - cert-watcher
+        - cert-watcher.path
+
+    - name: Certwatcher service start
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      with_items:
+        - cert-watcher
+        - cert-watcher.path
+
   - name: HAProxy
     block:
 
